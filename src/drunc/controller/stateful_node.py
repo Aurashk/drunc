@@ -89,6 +89,7 @@ class StatefulNode(abc.ABC):
     def __init__(
         self,
         fsm_configuration,
+        init_state: str = "",
         publisher: Optional[Callable[[Any], None]] = None,
         session: str = "",
         name: str = "",
@@ -96,17 +97,26 @@ class StatefulNode(abc.ABC):
         self.publisher = publisher
         self.session = session
         self.name = name
-
+        self._ready_state = False
         self.__fsm = FSM(fsm_configuration)
         self.log = get_logger("controller.StatefulNode")
         self.__operational_state = OperationalState(
-            stateful_node=self, initial_value=self.__fsm.initial_state
+            stateful_node=self, initial_value=init_state,
         )
         self.__operational_sub_state = OperationalState(
-            stateful_node=self, initial_value=self.__fsm.initial_state
+            stateful_node=self, initial_value=init_state
         )
         self.__included = InclusionState(stateful_node=self, initial_value=True)
         self.__in_error = ErrorState(stateful_node=self, initial_value=False)
+
+    def set_ready_state(self, ready: bool=True):
+        self._ready_state = ready
+        if self.ready_state:
+            self.__operational_state.value = self.__fsm.initial_state
+            self.__operational_sub_state.value = self.__fsm.initial_state
+
+    def get_ready_state(self):
+        return self._ready_state
 
     def publish_state(self):
         if self.publisher is not None:
