@@ -109,6 +109,7 @@ def unpack_addressed_command_to(data_type=None):
             ret = cmd(
                 obj,
                 **kwargs,
+                context=context,
             )
 
             return ret

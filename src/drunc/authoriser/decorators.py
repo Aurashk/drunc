@@ -27,12 +27,6 @@ def authentified_and_authorised(action, system):
                     responses=[],
                 )
 
-                # raise Unauthorised(
-                #     user = request.token.user_name,
-                #     action = action,
-                #     command = cmd.__name__,
-                #     drunc_system = obj.name,
-                # )
             log.debug("Executing wrapped function")
             ret = cmd(obj, request, context)
             log.debug("Exiting")

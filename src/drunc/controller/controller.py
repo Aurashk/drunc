@@ -4,6 +4,7 @@ import time
 import traceback
 from typing import Optional
 
+import grpc
 from druncschema.authoriser_pb2 import ActionType, SystemType
 from druncschema.broadcast_pb2 import BroadcastType
 from druncschema.controller_pb2 import (
@@ -583,6 +584,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         status = None
         if execute_on_self:
@@ -613,6 +615,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         d = None
 
@@ -655,6 +658,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         desc = None
         if execute_on_self:
@@ -707,6 +711,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         if not self.stateful_node.get_ready_state():
             self.log.warning("Controller is not ready, not executing command")
@@ -885,6 +890,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         if execute_on_self:
             statuses = self.propagate_to_all_children(
@@ -990,6 +996,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> PlainText:
         resp = None
         if execute_on_self:
@@ -1032,6 +1039,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> PlainText:
         resp = None
         if execute_on_self:
@@ -1075,6 +1083,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         children_expert_command_response = self.propagate_addressed_command(
             "execute_expert_command",
@@ -1105,6 +1114,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         resp = ""
         if execute_on_self:
@@ -1148,6 +1158,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         resp = ""
         if execute_on_self:
@@ -1192,6 +1203,7 @@ class Controller(ControllerServicer):
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
+        context: grpc.ServicerContext,
     ) -> Response:
         if execute_on_self:
             user = pack_to_any(PlainText(text=self.actor.get_user_name()))

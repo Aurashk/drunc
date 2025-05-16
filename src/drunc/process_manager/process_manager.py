@@ -92,7 +92,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
             data=self.configuration.data.authoriser, type=ConfTypes.PyObject
         )
 
-        self.opmon_publisher = getattr(self.configuration.data,"opmon_publisher",None)
+        self.opmon_publisher = getattr(self.configuration.data, "opmon_publisher", None)
         opmon_sleep_time = getattr(self.configuration.data, "opmon_sleep_time", 5)
         self.authoriser = DummyAuthoriser(dach, SystemType.PROCESS_MANAGER)
 
@@ -254,7 +254,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
         action=ActionType.CREATE, system=SystemType.PROCESS_MANAGER
     )  # 2nd step
     @unpack_request_data_to(BootRequest)  # 3rd step
-    def boot(self, br: BootRequest) -> Response:
+    def boot(self, br: BootRequest, context) -> Response:
         self.log.debug(
             f"{self.name} booting '{br.process_description.metadata.name}' from session '{br.process_description.metadata.session}'"
         )
@@ -287,7 +287,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
         action=ActionType.DELETE, system=SystemType.PROCESS_MANAGER
     )  # 2nd step
     @unpack_request_data_to(None)  # 3rd step
-    def terminate(self) -> Response:
+    def terminate(self, context) -> Response:
         self.log.debug(f"{self.name} terminating")
         try:
             resp = self._terminate_impl()
@@ -317,7 +317,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
         action=ActionType.DELETE, system=SystemType.PROCESS_MANAGER
     )  # 2nd step
     @unpack_request_data_to(ProcessQuery)  # 3rd step
-    def restart(self, q: ProcessQuery) -> Response:
+    def restart(self, q: ProcessQuery, context) -> Response:
         self.log.debug(f"{self.name} running restart")
         try:
             resp = self._restart_impl(q)
@@ -347,7 +347,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
         action=ActionType.DELETE, system=SystemType.PROCESS_MANAGER
     )  # 2nd step
     @unpack_request_data_to(ProcessQuery)  # 3rd step
-    def kill(self, q: ProcessQuery) -> Response:
+    def kill(self, q: ProcessQuery, context) -> Response:
         self.log.debug(f"{self.name} running kill")
         try:
             resp = self._kill_impl(q)
@@ -377,7 +377,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
         action=ActionType.READ, system=SystemType.PROCESS_MANAGER
     )  # 2nd step
     @unpack_request_data_to(ProcessQuery)  # 3rd step
-    def ps(self, q: ProcessQuery) -> Response:
+    def ps(self, q: ProcessQuery, context) -> Response:
         self.log.debug(f"{self.name} running ps")
         try:
             resp = self._ps_impl(q)
@@ -403,7 +403,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
         action=ActionType.DELETE, system=SystemType.PROCESS_MANAGER
     )  # 2nd step
     @unpack_request_data_to(ProcessQuery)  # 3rd step
-    def flush(self, query: ProcessQuery) -> Response:
+    def flush(self, query: ProcessQuery, context) -> Response:
         self.log.debug(f"{self.name} running flush")
         ret = []
 
@@ -464,7 +464,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
         action=ActionType.READ, system=SystemType.PROCESS_MANAGER
     )  # 2nd step
     @unpack_request_data_to(None)  # 3rd step
-    def describe(self) -> Response:
+    def describe(self, context) -> Response:
         self.log.debug(f"{self.name} running describe")
         bd = self.describe_broadcast()
         d = Description(
@@ -495,7 +495,7 @@ class ProcessManager(abc.ABC, ProcessManagerServicer):
         action=ActionType.READ, system=SystemType.PROCESS_MANAGER
     )  # 2nd step
     @async_unpack_request_data_to(LogRequest)  # 3rd step
-    async def logs(self, lr: LogRequest) -> Response:
+    async def logs(self, lr: LogRequest, context) -> Response:
         self.log.debug("Getting logs")
         try:
             async for r in self._logs_impl(lr):

@@ -65,9 +65,9 @@ def unpack_request_data_to(data_type=None, pass_token=False):
                     )
 
             if data is not None:
-                ret = cmd(obj, data, **kwargs)
+                ret = cmd(obj, data, **kwargs, context=context)
             else:
-                ret = cmd(obj, **kwargs)
+                ret = cmd(obj, **kwargs, context=context)
 
             log.debug("Exiting")
 
@@ -102,7 +102,7 @@ def async_unpack_request_data_to(data_type=None, pass_token=False):
                     )
 
             if data is not None:
-                async for a in cmd(obj, data, **kwargs):
+                async for a in cmd(obj, data, **kwargs, context=context):
                     yield a
             else:
                 async for a in cmd(obj, **kwargs):
