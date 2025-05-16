@@ -1,4 +1,4 @@
-from threading import Lock
+from threading import Event, Lock
 
 from druncschema.controller_pb2 import (
     FSMCommand,
@@ -100,7 +100,7 @@ class ClientSideChild(ChildNode):
     def get_endpoint(self):
         pass
 
-    def get_status(self, token):
+    def get_status(self, token, cancel_event):
         status = Status(
             state=self.state.get_operational_state(),
             sub_state="idle"
@@ -117,7 +117,9 @@ class ClientSideChild(ChildNode):
             children=[],
         )
 
-    def propagate_command(self, command: str, data, token: Token) -> Response:
+    def propagate_command(
+        self, command: str, data, token: Token, cancel_event: Event
+    ) -> Response:
         if command == "exclude":
             self.state.exclude()
             return Response(
@@ -139,10 +141,10 @@ class ClientSideChild(ChildNode):
             )
 
         elif command == "describe":
-            return self.describe(token)
+            return self.describe(token, cancel_event)
 
         elif command in ["status", "recompute_status"]:
-            return self.get_status(token)
+            return self.get_status(token, cancel_event)
 
         if self.state.excluded() and command == "execute_fsm_command":
             return Response(
@@ -162,14 +164,12 @@ class ClientSideChild(ChildNode):
         # here lies the mother of all the problems
         if command == "execute_fsm_command":
             return self.propagate_fsm_command(
-                unpack_any(data.command_data, FSMCommand), token
+                unpack_any(data.command_data, FSMCommand), token, cancel_event
             )
         elif command == "execute_expert_command":
             return self.propagate_expert_command(
-                unpack_any(data.command_data, PlainText), token
+                unpack_any(data.command_data, PlainText), token, cancel_event
             )
-        elif command == "describe":
-            return self.describe(token)
         else:
             self.log.info(f"Ignoring command '{command}' sent to '{self.name}'")
             return Response(
@@ -180,7 +180,9 @@ class ClientSideChild(ChildNode):
                 children=[],
             )
 
-    def propagate_expert_command(self, data: PlainText, token: Token) -> Response:
+    def propagate_expert_command(
+        self, data: PlainText, token: Token, cancel_event: Event
+    ) -> Response:
         return Response(
             name=self.name,
             token=token,
@@ -189,7 +191,9 @@ class ClientSideChild(ChildNode):
             children=[],
         )
 
-    def propagate_fsm_command(self, data: FSMCommand, token: Token) -> Response:
+    def propagate_fsm_command(
+        self, data: FSMCommand, token: Token, cancel_event: Event
+    ) -> Response:
         entry_state = self.state.get_operational_state()
         transition = self.fsm.get_transition(data.command_name)
         exit_state = self.fsm.get_destination_state(entry_state, transition)

@@ -1,3 +1,4 @@
+import threading
 import time
 
 import grpc
@@ -55,6 +56,7 @@ class gRPCChildNode(ChildNode):
                     token=init_token,
                     command="describe",
                     rethrow=True,
+                    cancel_event=threading.Event(),  # Which is never set
                 )
                 response.data.Unpack(desc)
             except ServerUnreachable as e:
@@ -97,11 +99,14 @@ class gRPCChildNode(ChildNode):
         self.channel = None
         self.broadcast.stop()
 
-    def propagate_command(self, command, data, token) -> Response:
+    def propagate_command(
+        self, command, data, token, cancel_event: threading.Event
+    ) -> Response:
         return send_command(
             controller=self.controller,
             token=token,
             command=command,
             rethrow=True,
             data=data,
+            cancel_event=cancel_event,
         )

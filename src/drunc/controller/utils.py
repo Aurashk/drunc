@@ -1,4 +1,6 @@
 import re
+import threading
+import time
 
 import grpc
 from google.protobuf import any_pb2
@@ -46,7 +48,22 @@ def get_detector_name(configuration) -> str:
     return detector_name
 
 
-def send_command(controller, token, command: str, data=None, rethrow=False):
+def cancel_request_on_cancel_event(future: grpc.Future, cancel_event: threading.Event):
+    while not future.done():
+        if cancel_event.is_set():
+            future.cancel()
+            break
+        time.sleep(0.1)
+
+
+def send_command(
+    controller,
+    token,
+    command: str,
+    data=None,
+    rethrow=False,
+    cancel_event: threading.Event = None,
+):
     log = get_logger("controller.send_command")
 
     # Grab the command from the controller stub in the context
@@ -56,7 +73,9 @@ def send_command(controller, token, command: str, data=None, rethrow=False):
     if not controller:
         raise RuntimeError("No controller initialised")
 
-    cmd = getattr(controller, command)  # this throws if the command doesn't exist
+    cmd = getattr(
+        controller, command
+    ).future  # this throws if the command doesn't exist
 
     request = Request(token=token)
 
@@ -66,7 +85,11 @@ def send_command(controller, token, command: str, data=None, rethrow=False):
             data_detail.Pack(data)
             request.data.CopyFrom(data_detail)
         log.debug(f"Sending: {command} to the controller, with {request=}")
-        response = cmd(request)
+        future = cmd(request)
+
+        cancel_request_on_cancel_event(future, cancel_event)
+
+        response = future.result()
 
     except grpc.RpcError as e:
         rethrow_if_unreachable_server(e)

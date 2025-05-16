@@ -1,4 +1,5 @@
 import os
+import threading
 
 from druncschema.controller_pb2 import Status
 from druncschema.request_response_pb2 import Response
@@ -47,11 +48,11 @@ class ChildNode:  # abc.ABC):
         pass
 
     # @abc.abstractmethod
-    def propagate_command(self, command, data, token):
+    def propagate_command(self, command, data, token, cancel_event):
         if command == "status":
-            return self.get_status(token)
+            return self.get_status(token, cancel_event)
         elif command == "describe":
-            return self.describe(token)
+            return self.describe(token, cancel_event)
         else:
             return Response(
                 name=self.name,
@@ -62,7 +63,7 @@ class ChildNode:  # abc.ABC):
             )
 
     # @abc.abstractmethod
-    def get_status(self, token):
+    def get_status(self, token, cancel_event):
         return Response(
             name=self.name,
             token=token,
@@ -82,7 +83,7 @@ class ChildNode:  # abc.ABC):
     def get_endpoint(self):
         pass
 
-    def describe(self, token: Token) -> Response:
+    def describe(self, token: Token, cancel_event: threading.Event) -> Response:
         descriptionType = None
         descriptionName = None
 

@@ -275,7 +275,9 @@ class Controller(ControllerServicer):
             if child.name in bad_children:
                 continue
             log_init_controller.info(f"Taking control of {child.name}")
-            child.propagate_command("take_control", None, self.actor.get_token())
+            child.propagate_command(
+                "take_control", None, self.actor.get_token(), threading.Event()
+            )
 
         self.broadcast(message="ready", btype=BroadcastType.SERVER_READY)
         self.stateful_node.set_ready_state(True)
@@ -494,6 +496,7 @@ class Controller(ControllerServicer):
             token,
             response_lock,
             response_children,
+            cancel_event,
         ):
             child = next(
                 (cn for cn in self.children_nodes if cn.name == child_name), None
@@ -512,6 +515,7 @@ class Controller(ControllerServicer):
                     command=command_name,
                     data=command_data,
                     token=token,
+                    cancel_event=cancel_event,
                 )
                 with response_lock:
                     response_children.append(response)
@@ -572,6 +576,7 @@ class Controller(ControllerServicer):
                     "token": token,
                     "response_lock": response_lock,
                     "response_children": response_children,
+                    "cancel_event": cancel_event,
                 },
             )
             t.start()

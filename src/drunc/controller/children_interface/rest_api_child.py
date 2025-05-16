@@ -240,10 +240,18 @@ class AppCommander:
             return False
 
     def send_command(
-        self, cmd_id: str, module_data: dict, entry_state="ANY", exit_state="ANY"
+        self,
+        cmd_id: str,
+        module_data: dict,
+        cancel_event: threading.Event,
+        entry_state="ANY",
+        exit_state="ANY",
     ):
         # here we go again...
         # module_data = {"modules": [{"data": cmd_data, "match": ""}]}
+        if cancel_event.is_set():
+            self.log.info(f"Command {cmd_id} cancelled")
+            return
 
         cmd = {
             "id": cmd_id,
@@ -281,11 +289,13 @@ class AppCommander:
         self.log.debug(f"Ack to {self.app}: {ack.status_code}")
         self.sent_cmd = cmd_id
 
-    def check_response(self, timeout: int = 0) -> dict:
+    def check_response(
+        self, timeout: int | float, cancel_event: threading.Event = None
+    ) -> dict:
         """Check if a response is present in the queue
 
         Args:
-            timeout (int, optional): Timeout in seconds
+            timeout (int|float): Timeout in seconds
 
         Returns:
             dict: Command response is json
@@ -295,26 +305,29 @@ class AppCommander:
             ResponseTimeout: Description
 
         """
-        try:
-            # self.log.info(f"Checking for answers from {self.app} {self.sent_cmd}")
-            r = self.response_queue.get(block=(timeout > 0), timeout=timeout)
-            self.log.info(f"Received reply from {self.app} to {self.sent_cmd}")
-            self.sent_cmd = None
+        if timeout <= 0:
+            raise ValueError("Timeout must be greater than 0")
 
-        except queue.Empty:
-            self.log.info(f"Queue empty! {self.app} to {self.sent_cmd}")
-            if not timeout:
-                raise NoResponse(
-                    f"No response available from {self.app} for command {self.sent_cmd}"
-                )
-            else:
-                self.log.error(
-                    f"Timeout while waiting for a reply from {self.app} for command {self.sent_cmd}"
-                )
-                raise ResponseTimeout(
-                    f"Timeout while waiting for a reply from {self.app} for command {self.sent_cmd}"
-                )
-        return r
+        time_start = time.time()
+        response = None
+
+        while not cancel_event.is_set() and response is None:
+            if time.time() - time_start > timeout:
+                break
+
+            try:
+                response = self.response_queue.get(block=True, timeout=0.2)
+                self.log.info(f"Received reply from {self.app} to {self.sent_cmd}")
+                self.sent_cmd = None
+
+            except queue.Empty:
+                pass
+
+        if response is None:
+            raise ResponseTimeout(
+                f"Timeout while waiting for a reply from {self.app} for command {self.sent_cmd}"
+            )
+        return response
 
 
 """
@@ -387,7 +400,9 @@ class RESTAPIChildNode(ClientSideChild):
     def get_endpoint(self):
         return f"rest://{self.app_host}:{self.app_port}"
 
-    def propagate_expert_command(self, data: PlainText, token: Token) -> Response:
+    def propagate_expert_command(
+        self, data: PlainText, token: Token, cancel_event: threading.Event
+    ) -> Response:
         data_dict = json.loads(data.text)
         example = json.dumps(
             {
@@ -434,9 +449,10 @@ class RESTAPIChildNode(ClientSideChild):
                 module_data=cmd_data,
                 entry_state=entry_state,
                 exit_state=exit_state,
+                cancel_event=cancel_event,
             )
             self.log.debug(f"Sent '{command_name}' to '{self.name}'")
-            r = self.commander.check_response(150)
+            r = self.commander.check_response(150, cancel_event)
 
             self.log.debug(f"Got response from '{command_name}' to '{self.name}'")
 
@@ -469,7 +485,9 @@ class RESTAPIChildNode(ClientSideChild):
 
         return response
 
-    def propagate_fsm_command(self, data: FSMCommand, token: Token) -> Response:
+    def propagate_fsm_command(
+        self, data: FSMCommand, token: Token, cancel_event: threading.Event
+    ) -> Response:
         entry_state = self.state.get_operational_state()
         transition = self.fsm.get_transition(data.command_name)
         exit_state = self.fsm.get_destination_state(entry_state, transition)
@@ -486,9 +504,10 @@ class RESTAPIChildNode(ClientSideChild):
                 module_data={"modules": [{"data": the_module_data, "match": ""}]},
                 entry_state=entry_state.upper(),
                 exit_state=exit_state.upper(),
+                cancel_event=cancel_event,
             )
             self.log.debug(f"Sent '{data.command_name}' to '{self.name}'")
-            r = self.commander.check_response(150)
+            r = self.commander.check_response(150, cancel_event)
 
             self.log.debug(f"Got response from '{data.command_name}' to '{self.name}'")
 
