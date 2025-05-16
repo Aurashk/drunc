@@ -1,3 +1,4 @@
+import threading
 from functools import wraps
 
 from druncschema.controller_pb2 import AddressedCommand
@@ -117,3 +118,23 @@ def unpack_addressed_command_to(data_type=None):
         return wrap
 
     return decor
+
+
+def set_cancellable(cmd):
+    @wraps(cmd)
+    def wrap(obj, context, **kwargs):
+        cancel_event = threading.Event()
+        print(f"New call {cmd.__name__}")
+
+        def set_cancel_event():
+            print(f"Executing callback: {cancel_event.is_set()}")
+            cancel_event.set()
+            print(f"Callback executed: {cancel_event.is_set()}")
+
+        context.add_callback(set_cancel_event)
+        print(f"Before function call cancelled? {cancel_event.is_set()}")
+        ret = cmd(obj, context=context, **kwargs, cancel_event=cancel_event)
+        print(f"After function call cancelled? {cancel_event.is_set()}")
+        return ret
+
+    return wrap

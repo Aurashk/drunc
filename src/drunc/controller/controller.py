@@ -34,7 +34,11 @@ from drunc.broadcast.server.configuration import BroadcastSenderConfHandler
 from drunc.broadcast.server.decorators import broadcasted
 from drunc.connectivity_service.client import ConnectivityServiceClient
 from drunc.controller.children_interface.rest_api_child import ResponseListener
-from drunc.controller.decorators import in_control, unpack_addressed_command_to
+from drunc.controller.decorators import (
+    in_control,
+    set_cancellable,
+    unpack_addressed_command_to,
+)
 from drunc.controller.exceptions import CannotSurrenderControl
 from drunc.controller.stateful_node import CannotExclude, CannotInclude, StatefulNode
 from drunc.controller.utils import (
@@ -225,6 +229,7 @@ class Controller(ControllerServicer):
             children_statuses = self.propagate_to_all_children(
                 command_name="status",
                 token=self.actor.get_token(),
+                cancel_event=threading.Event(),  ## Which never gets set
             )
             children_states = {}
             for response in children_statuses:
@@ -444,6 +449,7 @@ class Controller(ControllerServicer):
         self,
         command_name: str,
         token: Token,
+        cancel_event: threading.Event,
         command_data: Any = None,
         only_included: bool = True,
     ):
@@ -466,16 +472,18 @@ class Controller(ControllerServicer):
             addressed_commands=addressed_commands,
             token=token,
             override_payload=command_data,
+            cancel_event=cancel_event,
         )
 
     def propagate_addressed_command(
         self,
         command_name: str,
+        cancel_event: threading.Event,
         addressed_commands: dict[str, AddressedCommand],
         token: Token,
         override_payload: Any = None,
     ):
-        self.log.debug(f"Propagating {command_name} to children")
+        self.log.debug(f"Propagating {command_name} to children {cancel_event=}")
         response_children = []
         response_lock = threading.Lock()
 
@@ -550,6 +558,10 @@ class Controller(ControllerServicer):
         threads = []
 
         for child, data in addressed_commands.items():
+            if cancel_event.is_set():
+                self.log.warning(f"Propagating to {child} cancelled {cancel_event=}")
+                continue
+
             self.log.debug(f"Propagating to {child}")
             t = threading.Thread(
                 target=propagate_to_child,
@@ -579,12 +591,14 @@ class Controller(ControllerServicer):
         action=ActionType.READ, system=SystemType.CONTROLLER
     )  # 2nd step
     @unpack_addressed_command_to()  # 3rd step
+    @set_cancellable
     def status(
         self,
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         status = None
         if execute_on_self:
@@ -594,6 +608,7 @@ class Controller(ControllerServicer):
             "status",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
 
         return Response(
@@ -610,12 +625,14 @@ class Controller(ControllerServicer):
         action=ActionType.READ, system=SystemType.CONTROLLER
     )  # 2nd step
     @unpack_addressed_command_to()  # 3rd step
+    @set_cancellable
     def describe(
         self,
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         d = None
 
@@ -636,6 +653,7 @@ class Controller(ControllerServicer):
             "describe",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
 
         return Response(
@@ -652,6 +670,7 @@ class Controller(ControllerServicer):
         action=ActionType.READ, system=SystemType.CONTROLLER
     )  # 2nd step
     @unpack_addressed_command_to(PlainText)  # 4th step
+    @set_cancellable
     def describe_fsm(
         self,
         payload: PlainText,
@@ -659,6 +678,7 @@ class Controller(ControllerServicer):
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         desc = None
         if execute_on_self:
@@ -685,6 +705,7 @@ class Controller(ControllerServicer):
             "describe_fsm",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
 
         return Response(
@@ -705,6 +726,7 @@ class Controller(ControllerServicer):
     )  # 2nd step
     @in_control  # 3rd step
     @unpack_addressed_command_to(FSMCommand)  # 4th step
+    @set_cancellable
     def execute_fsm_command(
         self,
         payload: FSMCommand,
@@ -712,6 +734,7 @@ class Controller(ControllerServicer):
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         if not self.stateful_node.get_ready_state():
             self.log.warning("Controller is not ready, not executing command")
@@ -811,6 +834,7 @@ class Controller(ControllerServicer):
                 "execute_fsm_command",
                 addressed_commands=children_fsm_commands,
                 token=token,
+                cancel_event=cancel_event,
             )
 
             child_worst_response_flag = ResponseFlag.EXECUTED_SUCCESSFULLY
@@ -875,6 +899,7 @@ class Controller(ControllerServicer):
                     "execute_fsm_command",
                     addressed_commands=addressed_commands,
                     token=token,
+                    cancel_event=cancel_event,
                 ),
             )
 
@@ -885,12 +910,14 @@ class Controller(ControllerServicer):
     )  # 2nd step
     @in_control
     @unpack_addressed_command_to()  # 3rd step
+    @set_cancellable
     def recompute_status(
         self,
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         if execute_on_self:
             statuses = self.propagate_to_all_children(
@@ -981,6 +1008,7 @@ class Controller(ControllerServicer):
                     "recompute_status",
                     addressed_commands=addressed_commands,
                     token=token,
+                    cancel_event=cancel_event,
                 ),
             )
 
@@ -991,12 +1019,14 @@ class Controller(ControllerServicer):
     )  # 2nd step
     @in_control  # 3rd step
     @unpack_addressed_command_to()  # 4th step
+    @set_cancellable
     def include(
         self,
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> PlainText:
         resp = None
         if execute_on_self:
@@ -1017,6 +1047,7 @@ class Controller(ControllerServicer):
             "include",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
 
         return Response(
@@ -1034,12 +1065,14 @@ class Controller(ControllerServicer):
     )  # 2nd step
     @in_control
     @unpack_addressed_command_to()  # 3rd step
+    @set_cancellable
     def exclude(
         self,
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> PlainText:
         resp = None
         if execute_on_self:
@@ -1060,6 +1093,7 @@ class Controller(ControllerServicer):
             "exclude",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
 
         return Response(
@@ -1077,6 +1111,7 @@ class Controller(ControllerServicer):
     )  # 2nd step
     @in_control
     @unpack_addressed_command_to(PlainText)  # 3rd step
+    @set_cancellable
     def execute_expert_command(
         self,
         payload: PlainText,
@@ -1084,11 +1119,13 @@ class Controller(ControllerServicer):
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         children_expert_command_response = self.propagate_addressed_command(
             "execute_expert_command",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
 
         return Response(
@@ -1109,12 +1146,14 @@ class Controller(ControllerServicer):
         action=ActionType.UPDATE, system=SystemType.CONTROLLER
     )  # 2nd step
     @unpack_addressed_command_to()  # 3rd step
+    @set_cancellable
     def take_control(
         self,
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         resp = ""
         if execute_on_self:
@@ -1127,6 +1166,7 @@ class Controller(ControllerServicer):
             "take_control",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
         if any(
             cr.flag
@@ -1153,12 +1193,14 @@ class Controller(ControllerServicer):
     )  # 2nd step
     @in_control  # 3rd step
     @unpack_addressed_command_to()  # 4th step
+    @set_cancellable
     def surrender_control(
         self,
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         resp = ""
         if execute_on_self:
@@ -1172,6 +1214,7 @@ class Controller(ControllerServicer):
             "surrender_control",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
 
         if any(
@@ -1198,12 +1241,14 @@ class Controller(ControllerServicer):
         action=ActionType.READ, system=SystemType.CONTROLLER
     )  # 2nd step
     @unpack_addressed_command_to()  # 3rd step
+    @set_cancellable
     def who_is_in_charge(
         self,
         addressed_commands: dict[str, AddressedCommand],
         execute_on_self: bool,
         token: Token,
         context: grpc.ServicerContext,
+        cancel_event: threading.Event,
     ) -> Response:
         if execute_on_self:
             user = pack_to_any(PlainText(text=self.actor.get_user_name()))
@@ -1214,6 +1259,7 @@ class Controller(ControllerServicer):
             "who_is_in_charge",
             addressed_commands=addressed_commands,
             token=token,
+            cancel_event=cancel_event,
         )
 
         return Response(
