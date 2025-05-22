@@ -380,7 +380,8 @@ class Controller(ControllerServicer):
                         disable_data_storage=disable_data_storage,
                         run_time_at_start=int(self.run_time_at_start),
                         run_time_since_start=run_time_since_start,
-                        run_config=self.runinfo["Configuration"],
+                        run_config_file=self.configuration.oks_path,
+                        run_config_name=self.configuration.oks_key.session,
                     )
                 )
             except Exception as e:
