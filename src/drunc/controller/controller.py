@@ -168,6 +168,20 @@ class Controller(ControllerServicer):
             )
 
         self.children_nodes = self.configuration.get_dummy_children()
+        self.log.error(f"{self=}")
+        self.log.error(f"{dir(self)=}")
+        self.log.error(f"{self.configuration=}")
+        self.log.error(f"{dir(self.configuration)=}")
+        self.log.error(f"{self.configuration.session=}")
+        self.log.error(f"{dir(self.configuration.session)=}")
+        self.log.error(f"{self.configuration.session=}")
+        self.log.error(f"{dir(self.configuration.session)=}")
+        self.log.error(f"{self.configuration.session.segment=}")
+        self.log.error(f"{dir(self.configuration.session.segment)=}")
+        self.log.error(f"{self.configuration.session.segment.controller=}")
+        self.log.error(f"{dir(self.configuration.session.segment.controller)=}")
+        self.log.error(f"{self.configuration.session.segment.controller.id=}")
+        self.log.error(f"{self.name=}")
 
     def init_controller(self):
         log_init_controller = get_logger("controller.init_controller")
@@ -321,6 +335,10 @@ class Controller(ControllerServicer):
                 if run_time_at_start:
                     run_time_since_start = int(time.time() - run_time_at_start)
 
+                is_root_controller = False
+                if self.configuration.session.segment.controller.id == self.name:
+                    is_root_controller = True
+
                 self.log.debug(f"Publishing periodic run info every {interval_s}s")
                 self.controller_publisher(
                     message=RunInfo(
@@ -332,7 +350,8 @@ class Controller(ControllerServicer):
                         run_time_since_start=run_time_since_start,
                         run_config_file=self.configuration.oks_path,
                         run_config_name=self.configuration.oks_key.session,
-                    )
+                    ),
+                    custom_origin = {"is_root_controller": is_root_controller}
                 )
             except Exception as e:
                 self.log.warning(f"Error while publishing periodic status: {e}")
