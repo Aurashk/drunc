@@ -348,19 +348,8 @@ class RESTAPIChildNodeConfHandler(ConfHandler):
 
 
 class RESTAPIChildNode(ClientSideChild):
-    def __init__(
-        self,
-        name,
-        configuration: RESTAPIChildNodeConfHandler,
-        fsm_configuration: FSMConfHandler,
-        uri,
-    ):
-        super().__init__(
-            name=name,
-            node_type=ControlType.REST_API,
-            configuration=configuration,
-            fsm_configuration=fsm_configuration,
-        )
+    def __init__(self, name, configuration: RESTAPIChildNodeConfHandler, fsm_configuration: FSMConfHandler, uri):
+        super().__init__(name=name, node_type=ControlType.REST_API, configuration=configuration, fsm_configuration=fsm_configuration)
 
         self.log = get_logger(f"controller.{name}_rest_api_child")
 
@@ -370,10 +359,24 @@ class RESTAPIChildNode(ClientSideChild):
             fsmch = FSMConfHandler(fsm_configuration)
             self.fsm = FSM(conf=fsmch)
 
-        response_listener_host = socket.gethostname()
+        # Resolve response listener host to IP
+        try:
+            hostname = socket.gethostname()
+            response_listener_host = socket.gethostbyname(hostname)
+            self.log.info(f"Resolved response listener hostname '{hostname}' to IP: {response_listener_host}")
+        except Exception as e:
+            response_listener_host = hostname
+            self.log.warning(f"Could not resolve response listener hostname '{hostname}': {e}. Using original hostname.")
 
+        # Parse the URI and resolve app host to IP
         self.app_host, app_port = uri.split(":")
         self.app_port = int(app_port)
+
+        try:
+            self.app_host = socket.gethostbyname(self.app_host)
+            self.log.info(f"Resolved URI hostname to IP: {self.app_host}")
+        except Exception as e:
+            self.log.warning(f"Could not resolve URI hostname '{self.app_host}': {e}. Using original hostname.")
 
         if self.app_port == 0:
             raise DruncSetupException(
@@ -394,6 +397,7 @@ class RESTAPIChildNode(ClientSideChild):
         )
 
         self.response_listener.register(self.name, self.commander)
+
 
     def __str__(self):
         return f"'{self.name}@{self.app_host}:{self.app_port}' (type {self.node_type})"
