@@ -125,65 +125,6 @@ class K8sProcessManager(ProcessManager):
 
         self._kill_if_empty_session(session)
 
-    def _start_controller_port_forward(self, podname, session):
-        # This new version is non-blocking. It starts the tunnel in a background thread.
-        def _thread_target():
-            import subprocess
-            import tempfile
-
-            self.log.info(f"Waiting for pod '{podname}' to be in Running phase before starting port-forward...")
-            for _ in range(60): # Wait up to 60 seconds
-                try:
-                    pod = self._core_v1_api.read_namespaced_pod(name=podname, namespace=session)
-                    if pod.status.phase == 'Running':
-                        break
-                except self._api_error_v1_api:
-                    pass
-                sleep(1)
-            else:
-                self.log.error(f"Pod '{podname}' did not become Running in time. Cannot start port-forward.")
-                return
-
-            try:
-                grpc_port = pod.spec.containers[0].ports[0].container_port
-            except (IndexError, AttributeError, TypeError):
-                self.log.warning(f"Could not determine gRPC port for '{podname}'. Defaulting to 50051.")
-                grpc_port = 50051
-
-            port_map = f"{grpc_port}:{grpc_port}"
-            
-            kubeconfig_path = os.environ.get("KUBECONFIG")
-            kubeconfig_arg = f"--kubeconfig={kubeconfig_path}" if kubeconfig_path else ""
-            
-            kubectl_command_str = f"kubectl {kubeconfig_arg} port-forward -n {session} pod/{podname} {port_map}"
-            final_command = ["/bin/bash", "-l", "-c", kubectl_command_str]
-            
-            key = f"{podname}.{session}"
-            self.log.info(f"Starting port-forward for '{key}' with command: {kubectl_command_str}")
-
-            # The user can check this log file if connection fails
-            port_forward_log = tempfile.NamedTemporaryFile(mode='w+', delete=False)
-            self.log.info(f"kubectl port-forward output for '{key}' will be logged to {port_forward_log.name}")
-
-            process = subprocess.Popen(final_command, stdout=port_forward_log, stderr=subprocess.STDOUT)
-            self.port_forwards[key] = process
-            
-            # Wait for the process to exit (it will only exit if killed or if it fails)
-            process.wait()
-            self.log.info(f"Port-forward process for '{key}' has terminated.")
-            port_forward_log.close()
-
-
-        thread = threading.Thread(target=_thread_target, daemon=True)
-        thread.start()
-
-    def _stop_controller_port_forward(self, podname, session):
-        key = f"{podname}.{session}"
-        if key in self.port_forwards:
-            self.log.info(f"Stopping port-forward for '{key}'")
-            process = self.port_forwards.pop(key)
-            process.terminate()
-
     def is_alive(self, podname, session):
         try:
             pod_status = self._core_v1_api.read_namespaced_pod_status(podname, session)
@@ -353,10 +294,6 @@ class K8sProcessManager(ProcessManager):
         self._add_label(podname, "pod", "uuid", uuid, session=session)
         self.log.info(f'"{session}.{podname}":{uuid} boot request sent.')
 
-        # If this is the root controller, start the tunnel in the background
-        if podname == "root-controller":
-            self._start_controller_port_forward(podname, session)
-
         pd, pr, pu = ProcessDescription(), ProcessRestriction(), ProcessUUID(uuid=uuid)
         pd.CopyFrom(self.boot_request[uuid].process_description)
         pr.CopyFrom(self.boot_request[uuid].process_restriction)
@@ -401,25 +338,20 @@ class K8sProcessManager(ProcessManager):
         if uuid not in self.boot_request:
             raise DruncCommandException(f"Cannot restart process with UUID {uuid}: Not found.")
 
+        # Store the original boot request before we kill the process
         br_copy = BootRequest()
         br_copy.CopyFrom(self.boot_request[uuid])
 
-        pd = self.boot_request[uuid].process_description
-        podname, session = pd.metadata.name, pd.metadata.session
-        self.log.info(f"Restarting pod '{session}/{podname}'. First, killing the old one.")
-        self._kill_pod(podname, session)
-        self._kill_if_empty_session(session)
+        # Use the full kill implementation to ensure a complete cleanup
+        kill_query = ProcessQuery(uuids=[ProcessUUID(uuid=uuid)])
+        self._kill_impl(kill_query)
 
-        del self.boot_request[uuid]
-
+        # Now, boot the new instance with the same config and UUID
         restarted_process = self.__boot(br_copy, uuid)
-        return ProcessInstanceList(values=[restarted_process])
         
-    def _kill_pod(self, podname, session):
-        # Only try to stop the port-forward if we are killing the specific pod that has it.
-        if podname == "root-controller":
-            self._stop_controller_port_forward(podname, session)
+        return ProcessInstanceList(values=[restarted_process])   
 
+    def _kill_pod(self, podname, session):
         try:
             self._core_v1_api.delete_namespaced_pod(podname, session)
         except self._api_error_v1_api as e:
